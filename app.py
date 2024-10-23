@@ -81,6 +81,23 @@ def logout():
     session.clear()
     return jsonify({"message": "Logout successful"}), 200
 
+@app.route('/api/get_saved_contacts', methods=['GET'])
+def get_saved_contacts():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"message": "Not logged in"}), 401
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT u.name, u.phone_number
+        FROM contacts c
+        JOIN users u ON c.contact_id = u.id
+        WHERE c.user_id = ? AND c.status = 'accepted'
+    ''', (user_id,))
+    contacts = cursor.fetchall()
+    return jsonify([dict(c) for c in contacts]), 200
+
 @app.route('/api/add_contact', methods=['POST'])
 def add_contact():
     data = request.json
@@ -94,10 +111,30 @@ def add_contact():
     contact = cursor.fetchone()
     if not contact:
         return jsonify({"message": "User not found"}), 404
-    cursor.execute('INSERT INTO contacts (user_id, contact_id) VALUES (?, ?)',
+    
+    # Check if the contact already exists
+    cursor.execute('SELECT * FROM contacts WHERE (user_id = ? AND contact_id = ?) OR (user_id = ? AND contact_id = ?)',
+                   (user_id, contact['id'], contact['id'], user_id))
+    existing_contact = cursor.fetchone()
+    
+    if existing_contact:
+        if existing_contact['status'] == 'accepted':
+            return jsonify({"message": "Contact already exists"}), 400
+        elif existing_contact['user_id'] == user_id:
+            return jsonify({"message": "Contact request already sent"}), 400
+        else:
+            # Auto-accept if the other user had already sent a request
+            cursor.execute('UPDATE contacts SET status = "accepted" WHERE id = ?', (existing_contact['id'],))
+            db.commit()
+            add_notification(user_id, f"Contact request from {data['contact_phone']} automatically accepted", "contact_accepted", contact['id'])
+            add_notification(contact['id'], f"Contact request to {session.get('phone_number')} automatically accepted", "contact_accepted", user_id)
+            return jsonify({"message": "Contact automatically accepted"}), 200
+    
+    cursor.execute('INSERT INTO contacts (user_id, contact_id, status) VALUES (?, ?, "pending")',
                    (user_id, contact['id']))
     db.commit()
-    add_notification(contact['id'], f"New contact request from user {user_id}", "contact_request", user_id)
+    add_notification(contact['id'], f"New contact request from {session.get('phone_number')}", "contact_request", user_id)
+
     return jsonify({"message": "Contact request sent successfully"}), 201
 
 @app.route('/api/get_contact_requests', methods=['GET'])
@@ -112,10 +149,10 @@ def get_contact_requests():
         SELECT c.id, u.name, u.phone_number, c.status
         FROM contacts c
         JOIN users u ON c.user_id = u.id
-        WHERE c.contact_id = ? AND c.status = 'pending'
+        WHERE c.contact_id = ? AND c.status IN ('pending', 'accepted')
     ''', (user_id,))
-    requests = cursor.fetchall()
-    return jsonify([dict(r) for r in requests]), 200
+    contact_requests = cursor.fetchall()
+    return jsonify([dict(c) for c in contact_requests]), 200
 
 @app.route('/api/respond_contact_request', methods=['POST'])
 def respond_contact_request():
@@ -126,13 +163,30 @@ def respond_contact_request():
 
     db = get_db()
     cursor = db.cursor()
-    cursor.execute('UPDATE contacts SET status = ? WHERE id = ?', (data['status'], data['request_id']))
+    cursor.execute('UPDATE contacts SET status = ? WHERE id = ? AND contact_id = ?', (data['status'], data['request_id'], user_id))
+    if cursor.rowcount == 0:
+        return jsonify({"message": "Contact request not found or already processed"}), 404
     db.commit()
 
     cursor.execute('SELECT user_id FROM contacts WHERE id = ?', (data['request_id'],))
     requester_id = cursor.fetchone()['user_id']
     add_notification(requester_id, f"Your contact request was {data['status']}", "contact_response", user_id)
     return jsonify({"message": "Contact request updated successfully"}), 200
+
+@app.route('/api/remove_contact', methods=['POST'])
+def remove_contact():
+    data = request.json
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({"message": "Not logged in"}), 401
+
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('DELETE FROM contacts WHERE (user_id = ? AND contact_id = ?) OR (user_id = ? AND contact_id = ?)',
+                   (user_id, data['contact_id'], data['contact_id'], user_id))
+    db.commit()
+    add_notification(data['contact_id'], f"Contact connection removed by {session.get('phone_number')}", "contact_removed", user_id)
+    return jsonify({"message": "Contact removed successfully"}), 200
 
 @app.route('/api/create_ride_request', methods=['POST'])
 def create_ride_request():
@@ -166,6 +220,7 @@ def offer_ride():
     add_notification(requester_id, f"A ride has been offered for your request", "ride_offer", data['ride_request_id'])
     return jsonify({"message": "Ride offered successfully"}), 200
 
+
 @app.route('/api/get_ride_requests', methods=['GET'])
 def get_ride_requests():
     user_id = session.get('user_id')
@@ -178,10 +233,12 @@ def get_ride_requests():
         SELECT r.*, u.name as requester_name
         FROM ride_requests r
         JOIN users u ON r.user_id = u.id
-        WHERE r.user_id IN (SELECT contact_id FROM contacts WHERE user_id = ? AND status = 'accepted')
+        WHERE r.user_id IN (SELECT CASE WHEN user_id = ? THEN contact_id ELSE user_id END
+                            FROM contacts 
+                            WHERE (user_id = ? OR contact_id = ?) AND status = 'accepted')
         AND r.offered_by IS NULL
-        AND r.time > ?
-    ''', (user_id, datetime.now().isoformat()))
+        AND r.time > datetime('now')
+    ''', (user_id, user_id, user_id))
     ride_requests = cursor.fetchall()
     return jsonify([dict(r) for r in ride_requests]), 200
 
@@ -228,22 +285,7 @@ def mark_notification_read():
     db.commit()
     return jsonify({"message": "Notification marked as read"}), 200
 
-@app.route('/api/get_saved_contacts', methods=['GET'])
-def get_saved_contacts():
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({"message": "Not logged in"}), 401
 
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute('''
-        SELECT u.name, u.phone_number
-        FROM contacts c
-        JOIN users u ON c.contact_id = u.id
-        WHERE c.user_id = ? AND c.status = 'accepted'
-    ''', (user_id,))
-    contacts = cursor.fetchall()
-    return jsonify([dict(c) for c in contacts]), 200
 
 @app.route('/api/update_account', methods=['POST'])
 def update_account():
@@ -276,4 +318,4 @@ def add_notification(user_id, message, type, related_id):
 if __name__ == '__main__':
     if not os.path.exists(DATABASE):
         init_db()
-    app.run(debug=False)  # Set debug to False in production
+    app.run(debug=True)  # Set debug to False in production

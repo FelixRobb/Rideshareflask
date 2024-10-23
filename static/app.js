@@ -17,6 +17,7 @@ function showMainPage() {
     loadRideRequests();
     loadUserRideRequests();
     loadSavedContacts();
+    loadContactRequests();
     loadNotifications();
 }
 
@@ -100,7 +101,10 @@ function loadSavedContacts() {
         contacts.forEach(contact => {
             const contactDiv = document.createElement('div');
             contactDiv.className = 'contact';
-            contactDiv.innerHTML = `<p><strong>${contact.name}</strong> (${contact.phone_number})</p>`;
+            contactDiv.innerHTML = `
+                <p><strong>${contact.name}</strong> (${contact.phone_number})</p>
+                <button onclick="removeContact('${contact.phone_number}')">Remove Contact</button>
+            `;
             contactsDiv.appendChild(contactDiv);
         });
     });
@@ -117,6 +121,61 @@ function addContact(event) {
     .then(response => response.json())
     .then(data => {
         alert(data.message);
+        loadSavedContacts();
+        loadContactRequests();
+    });
+}
+
+function removeContact(contactPhone) {
+    if (confirm('Are you sure you want to remove this contact?')) {
+        fetch('/api/remove_contact', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contact_id: contactPhone })
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            loadSavedContacts();
+        });
+    }
+}
+
+function loadContactRequests() {
+    fetch('/api/get_contact_requests')
+    .then(response => response.json())
+    .then(requests => {
+        const requestsDiv = document.getElementById('contactRequests');
+        if (requestsDiv) {
+            requestsDiv.innerHTML = '';
+            if (requests.length === 0) {
+                requestsDiv.innerHTML = '<p>No pending contact requests.</p>';
+            } else {
+                requests.forEach(request => {
+                    const requestDiv = document.createElement('div');
+                    requestDiv.className = 'contact-request';
+                    requestDiv.innerHTML = `
+                        <p><strong>${request.name}</strong> (${request.phone_number}) wants to connect</p>
+                        <button onclick="respondToContactRequest(${request.id}, 'accepted')">Accept</button>
+                        <button onclick="respondToContactRequest(${request.id}, 'rejected')">Reject</button>
+                    `;
+                    requestsDiv.appendChild(requestDiv);
+                });
+            }
+        }
+    });
+}
+
+function respondToContactRequest(requestId, status) {
+    fetch('/api/respond_contact_request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: requestId, status: status })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        loadContactRequests();
         loadSavedContacts();
     });
 }
@@ -274,6 +333,14 @@ function showTab(tabId) {
     const buttons = document.querySelectorAll('nav button');
     buttons.forEach(button => button.classList.remove('active'));
     event.target.classList.add('active');
+
+    if (tabId === 'contacts') {
+        loadSavedContacts();
+        loadContactRequests();
+    } else if (tabId === 'rideRequests') {
+        loadRideRequests();
+        loadUserRideRequests();
+    }
 }
 
 document.addEventListener("DOMContentLoaded", checkSession);
