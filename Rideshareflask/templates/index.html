@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RideShare for Parents</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>RideShare for Parents</h1>
+        </header>
+        <main>
+            <div id="auth" class="auth-container">
+                <div id="loginForm" class="card">
+                    <h2>Login</h2>
+                    <form onsubmit="login(event)">
+                        <input type="tel" id="loginPhone" placeholder="Phone Number" required>
+                        <input type="password" id="loginPassword" placeholder="Password" required>
+                        <button type="submit">Login</button>
+                    </form>
+                    <p>Don't have an account? <a href="#" onclick="showRegisterForm()">Register</a></p>
+                </div>
+                <div id="registerForm" class="card hidden">
+                    <h2>Register</h2>
+                    <form onsubmit="register(event)">
+                        <input type="tel" id="registerPhone" placeholder="Phone Number" required>
+                        <input type="password" id="registerPassword" placeholder="Password" required>
+                        <input  type="text" id="registerName" placeholder="Name" required>
+                        <button type="submit">Register</button>
+                    </form>
+                    <p>Already have an account? <a href="#" onclick="showLoginForm()">Login</a></p>
+                </div>
+            </div>
+            <div id="main" class="hidden">
+                <nav>
+                    <button onclick="showTab('rideRequests')" class="active">Ride Requests</button>
+                    <button onclick="showTab('createRequest')">Create Request</button>
+                    <button onclick="showTab('profile')">Profile</button>
+                    <button onclick="showTab('notifications')">Notifications</button>
+                    <button onclick="logout()">Logout</button>
+                </nav>
+             <div id="rideRequests" class="tab-content">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Available Ride Requests</h3>
+                        <div id="availableRideRequests"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Your Ride Requests</h3>
+                        <div id="userRideRequests"></div>
+                        <button onclick="refreshUserRideRequests()" class="mt-4 w-full">Refresh Your Ride Requests</button>
+                    </div>
+                </div>
+            </div>
+                </div>
+                <div id="createRequest" class="tab-content hidden">
+                    <div class="card">
+                        <h3>Create Ride Request</h3>
+                        <form onsubmit="createRideRequest(event)">
+                            <input type="text" id="from" placeholder="From" required>
+                            <input type="text" id="to" placeholder="To" required>
+                            <input type="datetime-local" id="time" required>
+                            <input type="text" id="childName" placeholder="Child's Name" required>
+                            <button type="submit">Create Request</button>
+                        </form>
+                    </div>
+                </div>
+                <div id="profile" class="tab-content hidden">
+                    <div class="card">
+                        <h3>Your Contacts</h3>
+                        <div id="savedContacts"></div>
+                        <form onsubmit="addContact(event)">
+                            <input type="tel" id="contactPhone" placeholder="Contact's Phone Number" required>
+                            <button type="submit">Add Contact</button>
+                        </form>
+                    </div>
+                    <div class="card">
+                        <h3>Settings</h3>
+                        <form onsubmit="updateAccount(event)">
+                            <input type="text" id="updateName" placeholder="Change Name">
+                            <input type="password" id="updatePassword" placeholder="Change Password">
+                            <button type="submit">Update Account</button>
+                        </form>
+                    </div>
+                </div>
+                <div id="notifications" class="tab-content hidden">
+                    <div class="card">
+                        <h3>Notifications</h3>
+                        <div id="notificationList"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
